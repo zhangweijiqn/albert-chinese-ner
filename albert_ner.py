@@ -12,7 +12,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""BERT finetuning runner."""
+"""BERT finetuning runner.
+   https://github.com/ProHiryu/albert-chinese-ner/tree/master/albert_config
+   GPU: export CUDA_VISIBLE_DEVICES=0
+   pretrained download: https://github.com/brightmart/albert_zh/tree/52149e82faf3eddd02f31dc2942a4d06bc78c247
+"""
 
 from __future__ import absolute_import
 from __future__ import division
@@ -75,6 +79,7 @@ flags.DEFINE_integer(
 flags.DEFINE_bool("do_train", False, "Whether to run training.")
 
 flags.DEFINE_bool("do_eval", False, "Whether to run eval on the dev set.")
+flags.DEFINE_bool("do_export", True, "Whether to export pb format model.")
 
 flags.DEFINE_bool(
     "do_predict", False,
@@ -626,6 +631,20 @@ def convert_examples_to_features(examples, label_list, max_seq_length,
   return features
 
 
+def serving_input_fn():
+    label_ids = tf.placeholder(tf.int32, [None], name='label_ids')
+    input_ids = tf.placeholder(tf.int32, [None, FLAGS.max_seq_length], name='input_ids')
+    input_mask = tf.placeholder(tf.int32, [None, FLAGS.max_seq_length], name='input_mask')
+    segment_ids = tf.placeholder(tf.int32, [FLAGS.max_seq_length], name='segment_ids')
+    input_fn = tf.estimator.export.build_raw_serving_input_receiver_fn({
+        'label_ids': label_ids,
+        'input_ids': input_ids,
+        'input_mask': input_mask,
+        'segment_ids': segment_ids,
+    })()
+    return input_fn
+
+
 def main(_):
   tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -835,6 +854,14 @@ def main(_):
         output_line = "\n".join(id2label[id] for id in prediction if id!=0) + "\n"
         writer.write(output_line)
 
+  if FLAGS.do_export:
+    # estimator._export_to_tpu = False
+    estimator.export_savedmodel(FLAGS.output_dir, serving_input_fn)
+    # assets_extra = {"vocab.txt": FLAGS.vocab_file},
+    # as_text = False,
+    # strip_default_attrs = True
+
+
 
 if __name__ == "__main__":
   flags.mark_flag_as_required("data_dir")
@@ -843,3 +870,8 @@ if __name__ == "__main__":
   flags.mark_flag_as_required("bert_config_file")
   flags.mark_flag_as_required("output_dir")
   tf.app.run()
+
+
+'''
+python albert_ner.py --task_name ner --do_train true --do_eval true --data_dir data --vocab_file ./albert_config/vocab.txt --bert_config_file ./albert_base_zh/albert_config_base.json --max_seq_length 128 --train_batch_size 32 --learning_rate 2e-5 --num_train_epochs 3 --output_dir albert_base_ner_checkpoints
+'''
